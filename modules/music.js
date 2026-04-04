@@ -61,6 +61,23 @@ async function triggerPlayback() {
 }
 
 /**
+ * Lower Spotify to configured level after Jarvis starts playback (Web API; Premium).
+ */
+async function applyConfiguredSpotifyVolume() {
+    if (!config.spotify.setVolumeOnPlay || !spotifyApi.isAuthenticated()) {
+        return;
+    }
+    const pct = config.spotify.playbackVolumePercent;
+    try {
+        await new Promise((r) => setTimeout(r, 500));
+        await spotifyApi.setVolume(pct);
+        log.debug(`Spotify playback volume set to ${pct}%`);
+    } catch (e) {
+        log.warn(`Could not set Spotify volume (${pct}%): ${e.message}`);
+    }
+}
+
+/**
  * Plays music via Spotify Web API with actual playback control
  * @param {Object} options - Playback options
  * @param {string} options.uri - Spotify URI (playlist, track, album, artist)
@@ -106,6 +123,8 @@ async function playSpotify(options = {}) {
                 await spotifyApi.play();
                 log.info('Resumed Spotify playback');
             }
+
+            await applyConfiguredSpotifyVolume();
 
             isPlaying = true;
             currentPlayer = 'spotify-api';
@@ -325,6 +344,7 @@ async function resumeMusic() {
         
         if (spotifyApi.isAuthenticated()) {
             await spotifyApi.play();
+            await applyConfiguredSpotifyVolume();
             isPlaying = true;
             
             const currentTrack = await spotifyApi.getCurrentTrack();
@@ -490,6 +510,8 @@ async function searchAndPlay(query, type = 'track') {
         } else {
             await spotifyApi.play({ context_uri: uri });
         }
+
+        await applyConfiguredSpotifyVolume();
 
         isPlaying = true;
         currentPlayer = 'spotify-api';
