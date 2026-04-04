@@ -46,7 +46,7 @@ const config = {
         clientId: process.env.SPOTIFY_CLIENT_ID,
         clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
         redirectUri: process.env.SPOTIFY_REDIRECT_URI || 'http://localhost:3000/spotify-callback',
-        defaultPlaylist: process.env.SPOTIFY_DEFAULT_PLAYLIST
+        defaultPlaylist: process.env.SPOTIFY_DEFAULT_PLAYLIST || 'spotify:album:6mUdeDZCsExyJLMdAfDuwh'
     },
 
     // Local music settings
