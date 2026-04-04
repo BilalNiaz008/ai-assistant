@@ -159,6 +159,21 @@ function formatWeather(weather) {
 }
 
 /**
+ * Plain sentence for text-to-speech (no symbols)
+ */
+function formatWeatherSpeech(weather) {
+    if (!weather) return '';
+    const windUnit = weather.units === 'C' ? 'meters per second' : 'miles per hour';
+    const deg = weather.units === 'C' ? 'Celsius' : 'Fahrenheit';
+    return (
+        `Weather in ${weather.location}, ${weather.country}. ` +
+        `Temperature ${weather.temperature} degrees ${deg}, feels like ${weather.feelsLike}. ` +
+        `Conditions: ${weather.description}. Humidity ${weather.humidity} percent. ` +
+        `Wind speed ${weather.windSpeed} ${windUnit}.`
+    );
+}
+
+/**
  * Gets weather summary for AI context
  * @returns {Promise<string>} Weather summary string
  */
@@ -208,6 +223,7 @@ module.exports = {
     getWeather,
     getForecast,
     formatWeather,
+    formatWeatherSpeech,
     getWeatherSummary,
     registerActions
 };

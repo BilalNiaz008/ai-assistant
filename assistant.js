@@ -20,8 +20,25 @@ const music = require('./modules/music');
 const greeting = require('./modules/greeting');
 const aiSummarizer = require('./modules/ai-summarizer');
 const decisionEngine = require('./core/decision-engine');
+const voice = require('./modules/voice');
 
 const log = createModuleLogger('Assistant');
+
+// Voice mode (enabled by default)
+let voiceEnabled = true;
+
+/** Speak a factual startup line (no “expressive” word stretching). */
+async function speakStartupLine(text) {
+    if (!voiceEnabled || !text || !String(text).trim()) return;
+    try {
+        const r = await voice.speak(String(text).trim(), { transform: false });
+        if (!r.success) {
+            log.warn(`Startup voice: ${r.error}`);
+        }
+    } catch (e) {
+        log.warn(`Startup voice failed: ${e.message}`);
+    }
+}
 
 /**
  * Displays the Jarvis banner
@@ -96,13 +113,29 @@ async function runDefaultStartup() {
         music: null
     };
 
-    // Step 1: Generate greeting
+    // Step 1: Generate greeting (and speak if voice enabled)
     const greetingSpinner = ora('Generating greeting...').start();
     try {
         const greetingData = greeting.generateGreeting();
         results.greeting = greetingData;
         greetingSpinner.succeed('Greeting ready');
         console.log(greeting.formatGreeting(greetingData));
+        
+        // Speak the greeting
+        if (voiceEnabled) {
+            const voiceSpinner = ora('Speaking greeting...').start();
+            try {
+                const voiceResult = await greeting.speakGreeting();
+                if (voiceResult.speechResult?.success) {
+                    voiceSpinner.succeed(`Voice: ${voiceResult.speechResult.method}`);
+                } else {
+                    voiceSpinner.warn(`Voice unavailable: ${voiceResult.speechResult?.error || 'unknown'}`);
+                }
+            } catch (voiceErr) {
+                voiceSpinner.warn(`Voice error: ${voiceErr.message}`);
+                log.debug(`Voice greeting failed: ${voiceErr.message}`);
+            }
+        }
     } catch (error) {
         greetingSpinner.fail('Greeting failed');
         log.error(`Greeting error: ${error.message}`);
@@ -117,6 +150,7 @@ async function runDefaultStartup() {
             weatherSpinner.succeed('Weather fetched');
             console.log(weather.formatWeather(weatherData));
             console.log('');
+            await speakStartupLine(weather.formatWeatherSpeech(weatherData));
         } catch (error) {
             weatherSpinner.fail(`Weather unavailable: ${error.message}`);
             log.error(`Weather error: ${error.message}`);
@@ -131,6 +165,14 @@ async function runDefaultStartup() {
             results.emails = emails;
             emailSpinner.succeed(`Found ${emails.length} unread emails`);
             
+            {
+                const n = emails.length;
+                const line = n === 0
+                    ? 'You have no unread emails.'
+                    : `You have ${n} unread email${n === 1 ? '' : 's'}.`;
+                await speakStartupLine(line);
+            }
+
             if (emails.length > 0) {
                 console.log(gmail.formatEmails(emails));
                 console.log('');
@@ -160,6 +202,14 @@ async function runDefaultStartup() {
                             });
                         }
                         console.log('');
+
+                        if (summary?.summary) {
+                            let spoken = summary.summary.replace(/\s+/g, ' ').trim();
+                            if (spoken.length > 500) {
+                                spoken = `${spoken.slice(0, 500)}...`;
+                            }
+                            await speakStartupLine(`Email summary. ${spoken}`);
+                        }
                     } catch (error) {
                         summarySpinner.fail('Email analysis unavailable');
                         log.error(`Summary error: ${error.message}`);
@@ -185,6 +235,12 @@ async function runDefaultStartup() {
             results.music = musicResult;
             if (musicResult.success) {
                 musicSpinner.succeed(`Music started (${musicResult.player})`);
+                if (musicResult.message) {
+                    const msg = String(musicResult.message)
+                        .replace(/spotify-api/gi, 'Spotify')
+                        .replace(/\bspotify\b/gi, 'Spotify');
+                    await speakStartupLine(msg);
+                }
             } else {
                 musicSpinner.warn('Music unavailable');
             }
@@ -228,6 +284,10 @@ async function runAIStartup() {
                     console.log(gmail.formatEmails(actionResult.result?.emails || []));
                 }
             }
+        }
+
+        if (voiceEnabled && result.decision?.message) {
+            await speakStartupLine(result.decision.message);
         }
         
         return result;
@@ -291,12 +351,16 @@ Options:
   --no-weather        Skip weather fetch
   --no-email          Skip email check
   --no-ai             Disable AI features
+  --no-voice          Disable voice output
+  --voice-only        Test voice output and exit
   --quiet             Minimal output
 
 Examples:
-  node assistant.js                    # Normal startup
+  node assistant.js                    # Normal startup with voice
   node assistant.js --setup-gmail      # Authenticate Gmail
   node assistant.js --no-music         # Start without music
+  node assistant.js --no-voice         # Start without voice
+  node assistant.js --voice-only       # Test voice output
         `);
         process.exit(0);
     }
@@ -310,6 +374,27 @@ Examples:
             })
             .catch((error) => {
                 console.log(chalk.red(`\n❌ Authentication failed: ${error.message}\n`));
+                process.exit(1);
+            });
+        return true;
+    }
+    
+    // Voice test mode
+    if (args.includes('--voice-only')) {
+        console.log(chalk.cyan('\n🔊 Voice Test Mode\n'));
+        const testText = "Good evening, Sir. Your voice assistant is now online and ready to serve. How may I assist you today?";
+        console.log(chalk.gray(`   Speaking: "${testText}"\n`));
+        voice.speak(testText)
+            .then((result) => {
+                if (result.success) {
+                    console.log(chalk.green(`\n✅ Voice test successful (${result.method})\n`));
+                } else {
+                    console.log(chalk.red(`\n❌ Voice test failed: ${result.error}\n`));
+                }
+                process.exit(0);
+            })
+            .catch((error) => {
+                console.log(chalk.red(`\n❌ Voice test failed: ${error.message}\n`));
                 process.exit(1);
             });
         return true;
@@ -329,6 +414,9 @@ Examples:
         config.features.aiSummary = false;
         config.features.decisionEngine = false;
     }
+    if (args.includes('--no-voice')) {
+        voiceEnabled = false;
+    }
     
     return false;
 }
@@ -337,9 +425,20 @@ Examples:
  * Graceful shutdown handler
  */
 function setupShutdownHandlers() {
-    process.on('SIGINT', () => {
+    process.on('SIGINT', async () => {
         console.log(chalk.yellow('\n\n👋 Goodbye! Jarvis shutting down...\n'));
         log.info('Jarvis shutting down (SIGINT)');
+        
+        // Speak goodbye if voice enabled (quick, don't wait too long)
+        if (voiceEnabled) {
+            try {
+                await Promise.race([
+                    voice.speak("Goodbye, Sir. Until next time.", { transform: false }),
+                    new Promise(resolve => setTimeout(resolve, 3000))
+                ]);
+            } catch (e) { /* ignore */ }
+        }
+        
         process.exit(0);
     });
     
@@ -378,5 +477,7 @@ if (require.main === module) {
 module.exports = {
     startup,
     registerAllActions,
-    registry
+    registry,
+    voice,
+    isVoiceEnabled: () => voiceEnabled
 };

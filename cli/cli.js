@@ -23,6 +23,7 @@ const music = require('../modules/music');
 const greeting = require('../modules/greeting');
 const aiSummarizer = require('../modules/ai-summarizer');
 const decisionEngine = require('../core/decision-engine');
+const voice = require('../modules/voice');
 
 const log = createModuleLogger('CLI');
 
@@ -180,12 +181,97 @@ program
 program
     .command('greet')
     .description('Show greeting')
-    .action(async () => {
+    .option('-v, --voice', 'Speak the greeting')
+    .action(async (options) => {
         registerAllActions();
-        const result = await executeWithSpinner('greet_user');
+        const result = await executeWithSpinner('greet_user', { speak: options.voice });
         if (result) {
             console.log(result.formatted);
         }
+    });
+
+// Voice/Say command
+program
+    .command('say <text...>')
+    .description('Speak text aloud (Jarvis voice)')
+    .option('--voice <voice>', 'Voice: alloy, echo, fable, onyx, nova, shimmer', 'onyx')
+    .option('--speed <speed>', 'Speed: 0.25 to 4.0', '0.95')
+    .option('--raw', 'Speak without expressive transformation')
+    .action(async (text, options) => {
+        const textToSpeak = text.join(' ');
+        console.log(chalk.cyan(`\n🔊 Speaking: "${textToSpeak}"\n`));
+        
+        const spinner = ora('Generating speech...').start();
+        
+        try {
+            const result = await voice.speak(textToSpeak, {
+                voice: options.voice,
+                speed: parseFloat(options.speed),
+                transform: !options.raw
+            });
+            
+            if (result.success) {
+                spinner.succeed(`Spoken via ${result.method}`);
+            } else {
+                spinner.fail(`Speech failed: ${result.error}`);
+            }
+        } catch (error) {
+            spinner.fail(`Error: ${error.message}`);
+        }
+    });
+
+// Voice settings command
+program
+    .command('voice')
+    .description('Voice settings and test')
+    .option('-t, --test', 'Test voice output')
+    .option('-s, --set-voice <voice>', 'Set default voice')
+    .option('--speed <speed>', 'Set default speed')
+    .action(async (options) => {
+        if (options.setVoice) {
+            const result = voice.setVoice(options.setVoice);
+            if (result.success) {
+                console.log(chalk.green(`\n✅ Voice set to: ${result.voice}\n`));
+            } else {
+                console.log(chalk.red(`\n❌ ${result.error}\n`));
+            }
+            return;
+        }
+        
+        if (options.speed) {
+            const result = voice.setSpeed(parseFloat(options.speed));
+            if (result.success) {
+                console.log(chalk.green(`\n✅ Speed set to: ${result.speed}\n`));
+            } else {
+                console.log(chalk.red(`\n❌ ${result.error}\n`));
+            }
+            return;
+        }
+        
+        if (options.test) {
+            console.log(chalk.cyan('\n🔊 Voice Test\n'));
+            const spinner = ora('Testing voice...').start();
+            
+            const result = await voice.speak(
+                "Good evening, Sir. All systems are online and ready. How may I assist you today?",
+                { transform: true }
+            );
+            
+            if (result.success) {
+                spinner.succeed(`Voice test successful (${result.method})`);
+            } else {
+                spinner.fail(`Voice test failed: ${result.error}`);
+            }
+            return;
+        }
+        
+        // Show current settings
+        const settings = voice.getSettings();
+        console.log(chalk.cyan('\n🔊 Voice Settings:\n'));
+        console.log(`   Model: ${settings.model}`);
+        console.log(`   Voice: ${settings.voice}`);
+        console.log(`   Speed: ${settings.speed}`);
+        console.log(`   Available voices: ${settings.availableVoices.join(', ')}\n`);
     });
 
 // Ask command (AI)
@@ -330,6 +416,7 @@ program
                     console.log('   music      - Play music');
                     console.log('   pause      - Pause music');
                     console.log('   greet      - Show greeting');
+                    console.log('   say <text> - Speak text aloud');
                     console.log('   ask <q>    - Ask AI a question');
                     console.log('   actions    - List actions');
                     console.log('   exit       - Exit interactive mode\n');
@@ -359,7 +446,7 @@ program
                 }
                 
                 if (cmd === 'greet') {
-                    const result = await executeWithSpinner('greet_user');
+                    const result = await executeWithSpinner('greet_user', { speak: true });
                     if (result) console.log(result.formatted);
                     continue;
                 }
@@ -375,7 +462,16 @@ program
                     const result = await executeWithSpinner('ask_ai', { question });
                     if (result) {
                         console.log(chalk.cyan('\n🤖 ') + chalk.white(result) + '\n');
+                        // Also speak the response
+                        await voice.speak(result).catch(() => {});
                     }
+                    continue;
+                }
+                
+                if (cmd.startsWith('say ')) {
+                    const textToSpeak = cmd.substring(4);
+                    console.log(chalk.cyan(`\n🔊 Speaking...\n`));
+                    await voice.speak(textToSpeak);
                     continue;
                 }
                 
@@ -429,6 +525,9 @@ program
             console.log(chalk.cyan('═'.repeat(50) + '\n'));
             console.log(chalk.white(`   ${briefing}\n`));
             console.log(chalk.cyan('═'.repeat(50) + '\n'));
+            
+            // Speak the briefing
+            await voice.speak(briefing).catch(() => {});
         } catch (error) {
             spinner.fail('Could not generate AI briefing');
         }

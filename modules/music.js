@@ -19,6 +19,48 @@ let currentPlayer = null;
 let isPlaying = false;
 
 /**
+ * Waits for Spotify to load, then triggers playback via media keys
+ * Used as fallback when Spotify API is not authenticated
+ */
+async function triggerPlayback() {
+    // Wait for Spotify app to fully load the track
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    if (process.platform === 'win32') {
+        // Send media play key on Windows using PowerShell
+        // Character 179 is the Play/Pause media key
+        return new Promise((resolve) => {
+            exec('powershell -c "(New-Object -ComObject WScript.Shell).SendKeys([char]179)"', (error) => {
+                if (error) {
+                    log.debug(`Play trigger error: ${error.message}`);
+                }
+                resolve();
+            });
+        });
+    } else if (process.platform === 'darwin') {
+        // macOS: Use AppleScript to tell Spotify to play
+        return new Promise((resolve) => {
+            exec('osascript -e "tell application \\"Spotify\\" to play"', (error) => {
+                if (error) {
+                    log.debug(`Play trigger error: ${error.message}`);
+                }
+                resolve();
+            });
+        });
+    } else {
+        // Linux: Try dbus or playerctl
+        return new Promise((resolve) => {
+            exec('playerctl play || dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Play', (error) => {
+                if (error) {
+                    log.debug(`Play trigger error: ${error.message}`);
+                }
+                resolve();
+            });
+        });
+    }
+}
+
+/**
  * Plays music via Spotify Web API with actual playback control
  * @param {Object} options - Playback options
  * @param {string} options.uri - Spotify URI (playlist, track, album, artist)
@@ -87,12 +129,15 @@ async function playSpotify(options = {}) {
             };
         }
 
-        // Fallback: Open Spotify app with URI (no API control)
-        log.info('Spotify API not authenticated, opening app...');
+        // Fallback: Open Spotify app with URI and trigger playback
+        log.info('Spotify API not authenticated, opening app with auto-play...');
         
         if (uri) {
             await open(uri);
             log.info(`Opened Spotify with URI: ${uri}`);
+            
+            // Wait for Spotify to load, then send play command via media keys
+            await triggerPlayback();
         } else {
             await open('spotify:');
             log.info('Opened Spotify app');
@@ -105,21 +150,26 @@ async function playSpotify(options = {}) {
             success: true,
             player: 'spotify',
             uri,
-            message: 'Spotify opened (authenticate for full playback control)',
+            message: 'Spotify opened and playback started (authenticate for full control)',
             needsAuth: true
         };
     } catch (error) {
         log.error(`Failed to start Spotify: ${error.message}`);
         
-        // If API fails due to no device, try opening the app
+        // If API fails due to no device, try opening the app and trigger playback
         if (error.message.includes('No active Spotify devices')) {
-            log.info('No active devices, opening Spotify app...');
+            log.info('No active devices, opening Spotify app with auto-play...');
             await open(uri || 'spotify:');
+            
+            if (uri) {
+                await triggerPlayback();
+            }
+            
             return {
                 success: true,
                 player: 'spotify',
                 uri,
-                message: 'Opened Spotify - please start playback manually, then try again',
+                message: 'Opened Spotify and triggered playback',
                 needsDevice: true
             };
         }

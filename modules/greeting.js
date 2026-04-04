@@ -6,6 +6,7 @@
 const { config, getTimeOfDay } = require('../config/config');
 const { createModuleLogger } = require('../core/logger');
 const { registry } = require('../core/action-registry');
+const voice = require('./voice');
 
 const log = createModuleLogger('Greeting');
 
@@ -214,10 +215,75 @@ function getGreetingContext() {
     return `Time: ${timeOfDay}, Day: ${dayOfWeek}, Weekend: ${isWeekend}`;
 }
 
+/**
+ * Generates and SPEAKS a greeting (Jarvis-style)
+ * @param {Object} options - Options
+ * @param {string} options.name - User name override
+ * @param {boolean} options.includeContext - Include additional context in speech
+ * @returns {Promise<Object>} Greeting data with speech result
+ */
+async function speakGreeting(options = {}) {
+    const greeting = generateGreeting(options);
+    
+    // Build speech text
+    let speechText = greeting.greeting;
+    
+    // Add day-specific message if present
+    if (greeting.additionalMessage) {
+        speechText += ` ${greeting.additionalMessage}`;
+    }
+    
+    // Speak the greeting
+    log.info('Speaking greeting...');
+    const speechResult = await voice.speak(speechText);
+    
+    return {
+        ...greeting,
+        spoken: true,
+        speechResult
+    };
+}
+
+/**
+ * Generates and SPEAKS a contextual greeting with weather, emails, etc.
+ * @param {Object} context - Context data (weather, emailCount, tasks)
+ * @returns {Promise<Object>} Greeting data with speech result
+ */
+async function speakContextualGreeting(context = {}) {
+    const greeting = generateContextualGreeting(context);
+    
+    // Build natural speech text
+    let speechText = greeting.greeting;
+    
+    // Add context naturally
+    if (greeting.hasContext && greeting.context.length > 0) {
+        speechText += ' Here\'s your quick update. ';
+        speechText += greeting.context.join('. ') + '.';
+    }
+    
+    if (greeting.additionalMessage) {
+        speechText += ` ${greeting.additionalMessage}`;
+    }
+    
+    // Speak the greeting
+    log.info('Speaking contextual greeting...');
+    const speechResult = await voice.speak(speechText);
+    
+    return {
+        ...greeting,
+        spoken: true,
+        speechResult
+    };
+}
+
 // Register actions
 function registerActions() {
     registry.register('greet_user', {
         handler: async (params) => {
+            // If voice enabled, speak the greeting
+            if (params.speak) {
+                return await speakGreeting(params);
+            }
             const greeting = generateGreeting(params);
             return { ...greeting, formatted: formatGreeting(greeting) };
         },
@@ -226,12 +292,17 @@ function registerActions() {
         triggers: ['hello', 'hi', 'hey', 'greet', 'good morning', 'good afternoon', 'good evening'],
         parameters: {
             name: { type: 'string', description: 'User name override' },
-            timeOfDay: { type: 'string', enum: ['morning', 'afternoon', 'evening', 'night'] }
+            timeOfDay: { type: 'string', enum: ['morning', 'afternoon', 'evening', 'night'] },
+            speak: { type: 'boolean', description: 'Speak the greeting aloud' }
         }
     });
 
     registry.register('contextual_greeting', {
         handler: async (params) => {
+            // If voice enabled, speak the greeting
+            if (params.speak) {
+                return await speakContextualGreeting(params.context || {});
+            }
             const greeting = generateContextualGreeting(params.context || {});
             return { ...greeting, formatted: formatContextualGreeting(greeting) };
         },
@@ -239,7 +310,8 @@ function registerActions() {
         category: 'interaction',
         triggers: ['briefing', 'status', 'overview'],
         parameters: {
-            context: { type: 'object', description: 'Context data (weather, emailCount, tasks)' }
+            context: { type: 'object', description: 'Context data (weather, emailCount, tasks)' },
+            speak: { type: 'boolean', description: 'Speak the greeting aloud' }
         }
     });
 
@@ -252,5 +324,7 @@ module.exports = {
     generateContextualGreeting,
     formatContextualGreeting,
     getGreetingContext,
+    speakGreeting,
+    speakContextualGreeting,
     registerActions
 };
