@@ -273,23 +273,41 @@ async function runAIStartup() {
         console.log(chalk.gray(`\n   Reasoning: ${result.decision.reasoning}`));
         console.log(chalk.gray(`   Actions executed: ${result.execution.actionsExecuted}`));
         
-        // Display action results
+        // Display action results (and speak each fetched item when voice is on)
         for (const actionResult of result.execution.actionResults) {
             if (actionResult.success) {
                 if (actionResult.action === 'greet_user' && actionResult.result?.formatted) {
                     console.log(actionResult.result.formatted);
+                    if (voiceEnabled) {
+                        const r = actionResult.result;
+                        let line = r.greeting || '';
+                        if (r.additionalMessage) line += ` ${r.additionalMessage}`;
+                        await speakStartupLine(line.trim());
+                    }
                 } else if (actionResult.action === 'get_weather' && actionResult.result?.formatted) {
                     console.log(actionResult.result.formatted);
+                    if (voiceEnabled && actionResult.result.weather) {
+                        await speakStartupLine(weather.formatWeatherSpeech(actionResult.result.weather));
+                    }
                 } else if (actionResult.action === 'get_unread_emails') {
-                    console.log(gmail.formatEmails(actionResult.result?.emails || []));
+                    const emails = actionResult.result?.emails || [];
+                    console.log(gmail.formatEmails(emails));
+                    if (voiceEnabled) {
+                        const n = emails.length;
+                        await speakStartupLine(
+                            n === 0
+                                ? 'You have no unread emails.'
+                                : `You have ${n} unread email${n === 1 ? '' : 's'}.`
+                        );
+                    }
+                } else if (actionResult.action === 'play_music' && voiceEnabled && actionResult.result?.message) {
+                    const msg = String(actionResult.result.message)
+                        .replace(/spotify-api/gi, 'Spotify');
+                    await speakStartupLine(msg);
                 }
             }
         }
 
-        if (voiceEnabled && result.decision?.message) {
-            await speakStartupLine(result.decision.message);
-        }
-        
         return result;
     } catch (error) {
         spinner.fail('AI startup failed, falling back to default');

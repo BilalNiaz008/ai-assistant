@@ -27,6 +27,23 @@ const voice = require('../modules/voice');
 
 const log = createModuleLogger('CLI');
 
+function cliVoiceMuted() {
+    return process.argv.includes('--no-voice');
+}
+
+/** Speak fetched CLI results (plain, factual). */
+async function speakCliLine(text) {
+    if (cliVoiceMuted() || !text || !String(text).trim()) return;
+    try {
+        const r = await voice.speak(String(text).trim(), { transform: false });
+        if (!r.success) {
+            log.warn(`CLI voice: ${r.error}`);
+        }
+    } catch (e) {
+        log.warn(`CLI voice failed: ${e.message}`);
+    }
+}
+
 const program = new Command();
 
 /**
@@ -69,7 +86,7 @@ async function executeWithSpinner(actionName, params = {}) {
 // Configure CLI program
 program
     .name('jarvis')
-    .description('Jarvis AI Personal Assistant CLI')
+    .description('Jarvis AI Personal Assistant CLI (pass --no-voice anywhere to skip speech)')
     .version('1.0.0');
 
 // Weather command
@@ -88,11 +105,15 @@ program
                 result.forecasts.slice(0, 8).forEach(f => {
                     console.log(`   ${f.datetime.toLocaleString()}: ${f.temperature}°${result.units}, ${f.description}`);
                 });
+                await speakCliLine(weather.formatForecastSpeech(result));
             }
         } else {
             const result = await executeWithSpinner('get_weather', { location: options.location });
             if (result) {
                 console.log(result.formatted);
+                if (result.weather) {
+                    await speakCliLine(weather.formatWeatherSpeech(result.weather));
+                }
             }
         }
     });
@@ -112,6 +133,15 @@ program
         
         if (result) {
             console.log(result.formatted);
+
+            {
+                const n = result.emails.length;
+                await speakCliLine(
+                    n === 0
+                        ? 'You have no unread emails.'
+                        : `You have ${n} unread email${n === 1 ? '' : 's'}.`
+                );
+            }
             
             if (options.summarize && result.emails.length > 0) {
                 console.log('');
@@ -135,6 +165,12 @@ program
                         summary.actionItems.forEach(i => {
                             console.log(chalk.green(`   • ${i.action}`));
                         });
+                    }
+
+                    if (summary.summary) {
+                        let spoken = summary.summary.replace(/\s+/g, ' ').trim();
+                        if (spoken.length > 500) spoken = `${spoken.slice(0, 500)}...`;
+                        await speakCliLine(`Email summary. ${spoken}`);
                     }
                 }
             }
@@ -164,6 +200,9 @@ program
             });
             if (result) {
                 console.log(chalk.green(`\n🎵 ${result.message}\n`));
+                if (result.message) {
+                    await speakCliLine(String(result.message).replace(/spotify-api/gi, 'Spotify'));
+                }
             }
         } else {
             const status = await executeWithSpinner('music_status');
@@ -173,6 +212,15 @@ program
                 console.log(`   Player: ${status.currentPlayer || 'None'}`);
                 console.log(`   Spotify configured: ${status.spotifyConfigured}`);
                 console.log(`   Local file configured: ${status.localFileConfigured}\n`);
+                let line = status.isPlaying ? 'Music is playing.' : 'Music is not playing.';
+                if (status.currentTrack?.name) {
+                    line += ` Now playing ${status.currentTrack.name}`;
+                    if (status.currentTrack.artist) {
+                        line += ` by ${status.currentTrack.artist}`;
+                    }
+                    line += '.';
+                }
+                await speakCliLine(line);
             }
         }
     });
@@ -285,6 +333,9 @@ program
         if (result) {
             console.log(chalk.cyan('\n🤖 AI Response:\n'));
             console.log(chalk.white(`   ${result}\n`));
+            let spoken = String(result).replace(/\s+/g, ' ').trim();
+            if (spoken.length > 800) spoken = `${spoken.slice(0, 800)}...`;
+            await speakCliLine(`Here's the answer. ${spoken}`);
         }
     });
 
@@ -331,6 +382,11 @@ program
             
             if (decision.message) {
                 console.log(chalk.cyan(`\n💬 ${decision.message}\n`));
+                await speakCliLine(decision.message);
+            } else if (decision.reasoning) {
+                let r = decision.reasoning.replace(/\s+/g, ' ').trim();
+                if (r.length > 400) r = `${r.slice(0, 400)}...`;
+                await speakCliLine(r);
             }
         } catch (error) {
             spinner.fail(`Error: ${error.message}`);
@@ -411,9 +467,9 @@ program
                 
                 if (cmd === 'help') {
                     console.log(chalk.cyan('\n   Available commands:'));
-                    console.log('   weather    - Get weather');
-                    console.log('   email      - Check emails');
-                    console.log('   music      - Play music');
+                    console.log('   weather    - Get weather (speaks summary)');
+                    console.log('   email      - Check emails (speaks count)');
+                    console.log('   music      - Play music (speaks status)');
                     console.log('   pause      - Pause music');
                     console.log('   greet      - Show greeting');
                     console.log('   say <text> - Speak text aloud');
@@ -425,18 +481,34 @@ program
                 
                 if (cmd === 'weather') {
                     const result = await executeWithSpinner('get_weather');
-                    if (result) console.log(result.formatted);
+                    if (result) {
+                        console.log(result.formatted);
+                        if (result.weather) {
+                            await speakCliLine(weather.formatWeatherSpeech(result.weather));
+                        }
+                    }
                     continue;
                 }
                 
                 if (cmd === 'email' || cmd === 'emails') {
                     const result = await executeWithSpinner('get_unread_emails', { maxResults: 5 });
-                    if (result) console.log(result.formatted);
+                    if (result) {
+                        console.log(result.formatted);
+                        const n = result.emails.length;
+                        await speakCliLine(
+                            n === 0
+                                ? 'You have no unread emails.'
+                                : `You have ${n} unread email${n === 1 ? '' : 's'}.`
+                        );
+                    }
                     continue;
                 }
                 
                 if (cmd === 'music' || cmd === 'play') {
-                    await executeWithSpinner('play_music');
+                    const result = await executeWithSpinner('play_music');
+                    if (result?.message) {
+                        await speakCliLine(String(result.message).replace(/spotify-api/gi, 'Spotify'));
+                    }
                     continue;
                 }
                 
@@ -462,8 +534,9 @@ program
                     const result = await executeWithSpinner('ask_ai', { question });
                     if (result) {
                         console.log(chalk.cyan('\n🤖 ') + chalk.white(result) + '\n');
-                        // Also speak the response
-                        await voice.speak(result).catch(() => {});
+                        let spoken = String(result).replace(/\s+/g, ' ').trim();
+                        if (spoken.length > 800) spoken = `${spoken.slice(0, 800)}...`;
+                        await speakCliLine(`Here's the answer. ${spoken}`);
                     }
                     continue;
                 }
@@ -471,18 +544,35 @@ program
                 if (cmd.startsWith('say ')) {
                     const textToSpeak = cmd.substring(4);
                     console.log(chalk.cyan(`\n🔊 Speaking...\n`));
-                    await voice.speak(textToSpeak);
+                    if (!cliVoiceMuted()) {
+                        await voice.speak(textToSpeak);
+                    }
                     continue;
                 }
                 
                 // Try to find matching action
                 const matches = registry.findActions(cmd);
                 if (matches.length > 0) {
-                    const result = await executeWithSpinner(matches[0].name);
+                    const actionName = matches[0].name;
+                    const result = await executeWithSpinner(actionName);
                     if (result?.formatted) {
                         console.log(result.formatted);
+                        if (actionName === 'get_weather' && result.weather) {
+                            await speakCliLine(weather.formatWeatherSpeech(result.weather));
+                        }
+                        if (actionName === 'get_unread_emails' && result.emails) {
+                            const n = result.emails.length;
+                            await speakCliLine(
+                                n === 0
+                                    ? 'You have no unread emails.'
+                                    : `You have ${n} unread email${n === 1 ? '' : 's'}.`
+                            );
+                        }
                     } else if (typeof result === 'string') {
                         console.log(result);
+                        await speakCliLine(result.slice(0, 600));
+                    } else if (result?.message) {
+                        await speakCliLine(String(result.message));
                     }
                 } else {
                     console.log(chalk.yellow(`   Unknown command: ${cmd}. Type "help" for available commands.\n`));
@@ -526,8 +616,11 @@ program
             console.log(chalk.white(`   ${briefing}\n`));
             console.log(chalk.cyan('═'.repeat(50) + '\n'));
             
-            // Speak the briefing
-            await voice.speak(briefing).catch(() => {});
+            if (!cliVoiceMuted()) {
+                let spoken = briefing.replace(/\s+/g, ' ').trim();
+                if (spoken.length > 1200) spoken = `${spoken.slice(0, 1200)}...`;
+                await voice.speak(spoken, { transform: false }).catch(() => {});
+            }
         } catch (error) {
             spinner.fail('Could not generate AI briefing');
         }
