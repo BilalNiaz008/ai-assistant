@@ -112,6 +112,7 @@ async function runDefaultStartup() {
         weather: null,
         emails: null,
         emailSummary: null,
+        basecamp: null,
         music: null
     };
 
@@ -229,6 +230,26 @@ async function runDefaultStartup() {
         }
     }
 
+    // Step 4b: Open Basecamp in Chrome (before music)
+    if (config.features.openBasecampOnStartup) {
+        const basecampSpinner = ora('Opening Basecamp in Chrome...').start();
+        try {
+            const bc = await apps.openBasecamp();
+            results.basecamp = bc;
+            if (bc.success) {
+                basecampSpinner.succeed('Basecamp opened');
+                console.log(chalk.cyan(`\n🌐 ${bc.message || 'Basecamp opened in Chrome'}\n`));
+                await speakStartupLine('Opening Basecamp in Chrome.');
+            } else {
+                basecampSpinner.warn(bc.error || 'Could not open Basecamp');
+                log.warn(`Basecamp: ${bc.error}`);
+            }
+        } catch (error) {
+            basecampSpinner.fail(`Basecamp: ${error.message}`);
+            log.error(`Basecamp error: ${error.message}`);
+        }
+    }
+
     // Step 5: Play music (if enabled)
     if (config.features.music) {
         const musicSpinner = ora('Starting music...').start();
@@ -306,6 +327,44 @@ async function runAIStartup() {
                     const msg = String(actionResult.result.message)
                         .replace(/spotify-api/gi, 'Spotify');
                     await speakStartupLine(msg);
+                } else if (
+                    (actionResult.action === 'open_basecamp' || actionResult.action === 'open_url') &&
+                    actionResult.result?.success
+                ) {
+                    const r = actionResult.result;
+                    console.log(chalk.cyan(`\n🌐 ${r.message || r.url || 'Opened'}\n`));
+                    if (voiceEnabled) {
+                        await speakStartupLine(
+                            actionResult.action === 'open_basecamp'
+                                ? 'Opening Basecamp in Chrome.'
+                                : `Opening ${r.url || 'link'} in Chrome.`
+                        );
+                    }
+                }
+            }
+        }
+
+        // If startup should open Basecamp but the AI plan did not include it, open now
+        if (config.features.openBasecampOnStartup) {
+            const alreadyOpened = result.execution.actionResults.some(
+                (ar) => ar.success && ar.action === 'open_basecamp'
+            );
+            if (!alreadyOpened) {
+                const bcSpinner = ora('Opening Basecamp in Chrome...').start();
+                try {
+                    const bc = await apps.openBasecamp();
+                    if (bc.success) {
+                        bcSpinner.succeed('Basecamp opened');
+                        console.log(chalk.cyan(`\n🌐 ${bc.message || 'Basecamp opened in Chrome'}\n`));
+                        if (voiceEnabled) {
+                            await speakStartupLine('Opening Basecamp in Chrome.');
+                        }
+                    } else {
+                        bcSpinner.warn(bc.error || 'Could not open Basecamp');
+                    }
+                } catch (e) {
+                    bcSpinner.fail(e.message);
+                    log.warn(`Basecamp: ${e.message}`);
                 }
             }
         }
@@ -373,6 +432,7 @@ Options:
   --no-ai             Disable AI features
   --no-voice          Disable voice output
   --voice-only        Test voice output and exit
+  --no-basecamp       Skip opening Basecamp in Chrome on startup
   --quiet             Minimal output
 
 Examples:
@@ -436,6 +496,9 @@ Examples:
     }
     if (args.includes('--no-voice')) {
         voiceEnabled = false;
+    }
+    if (args.includes('--no-basecamp')) {
+        config.features.openBasecampOnStartup = false;
     }
     
     return false;

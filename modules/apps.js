@@ -3,8 +3,11 @@
  * Handles opening applications, browsers, and URLs
  */
 
+const fs = require('fs');
+const path = require('path');
 const { exec } = require('child_process');
 const open = require('open');
+const { config } = require('../config/config');
 const { createModuleLogger } = require('../core/logger');
 const { registry } = require('../core/action-registry');
 
@@ -69,6 +72,33 @@ const BOOKMARKS = {
 };
 
 /**
+ * Chrome executable for Windows (optional CHROME_PATH + common locations).
+ */
+function resolveChromeExecutable() {
+    const custom = config.browser?.chromePath;
+    if (custom && fs.existsSync(custom)) {
+        return custom;
+    }
+    if (process.platform !== 'win32') {
+        return null;
+    }
+    const pf = process.env.ProgramFiles || 'C:\\Program Files';
+    const pf86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+    const local = process.env.LOCALAPPDATA || '';
+    const candidates = [
+        path.join(pf, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+        path.join(pf86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+        path.join(local, 'Google', 'Chrome', 'Application', 'chrome.exe')
+    ];
+    for (const p of candidates) {
+        if (p && fs.existsSync(p)) {
+            return p;
+        }
+    }
+    return null;
+}
+
+/**
  * Opens a URL in the default browser or specified browser
  * @param {string} url - URL to open
  * @param {string} browser - Browser to use (chrome, firefox, edge, or default)
@@ -80,6 +110,10 @@ async function openUrl(url, browser = 'default') {
         
         if (browser === 'default') {
             await open(url);
+        } else if (browser === 'chrome') {
+            const exe = resolveChromeExecutable();
+            const app = exe || open.apps.chrome;
+            await open(url, { app: { name: app } });
         } else {
             const platform = process.platform;
             const browserCmd = APP_COMMANDS[browser]?.[platform];
@@ -187,11 +221,17 @@ async function openChrome(url = null) {
 }
 
 /**
- * Opens Basecamp projects
+ * Opens Basecamp in Chrome — uses BASECAMP_URL from .env when set, else built-in bookmark.
  * @returns {Promise<Object>} Result
  */
 async function openBasecamp() {
-    return openUrl(BOOKMARKS.basecamp, 'chrome');
+    const fromEnv = config.browser?.basecampUrl && String(config.browser.basecampUrl).trim();
+    const url = fromEnv || BOOKMARKS.basecamp;
+    const result = await openUrl(url, 'chrome');
+    if (result.success) {
+        result.message = `Opened Basecamp (${url})`;
+    }
+    return result;
 }
 
 /**
