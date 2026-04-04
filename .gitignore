@@ -41,3 +41,6 @@ coverage/
 tmp/
 temp/
 *.tmp
+
+# Voice cache
+.voice-cache/

@@ -46,12 +46,45 @@ const config = {
         clientId: process.env.SPOTIFY_CLIENT_ID,
         clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
         redirectUri: process.env.SPOTIFY_REDIRECT_URI || 'http://localhost:3000/spotify-callback',
-        defaultPlaylist: process.env.SPOTIFY_DEFAULT_PLAYLIST || 'spotify:album:6mUdeDZCsExyJLMdAfDuwh'
+        defaultPlaylist: process.env.SPOTIFY_DEFAULT_PLAYLIST || 'spotify:album:6mUdeDZCsExyJLMdAfDuwh',
+        /** 0–100; applied via Web API when Jarvis starts playback (Premium + active device) */
+        playbackVolumePercent: Math.min(
+            100,
+            Math.max(0, parseInt(process.env.SPOTIFY_PLAYBACK_VOLUME, 10) || 28)
+        ),
+        setVolumeOnPlay: process.env.SPOTIFY_SET_VOLUME_ON_PLAY !== 'false'
+    },
+
+    // Assistant TTS / playback loudness (separate from Spotify)
+    voice: {
+        /** Windows SAPI 0–100 */
+        sapiVolume: Math.min(
+            100,
+            Math.max(0, parseInt(process.env.VOICE_SAPI_VOLUME, 10) || 100)
+        ),
+        /** WPF MediaPlayer 0–100 → 0.0–1.0 (OpenAI MP3 path on Windows) */
+        playerVolumePercent: Math.min(
+            100,
+            Math.max(0, parseInt(process.env.VOICE_PLAYER_VOLUME, 10) || 100)
+        ),
+        /** Linear gain for ffplay when playing TTS MP3 (1 = normal, 1.5 ≈ +3.5 dB) */
+        mp3Gain: Math.min(
+            3,
+            Math.max(0.25, parseFloat(process.env.VOICE_MP3_GAIN) || 1.45)
+        )
     },
 
     // Local music settings
     music: {
         localPath: process.env.LOCAL_MUSIC_PATH
+    },
+
+    // Browser (Chrome → Basecamp, etc.)
+    browser: {
+        /** Your team Basecamp home or project URL */
+        basecampUrl: (process.env.BASECAMP_URL || '').trim(),
+        /** Optional full path to chrome.exe if not auto-detected */
+        chromePath: (process.env.CHROME_PATH || '').trim()
     },
 
     // Feature flags

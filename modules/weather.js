@@ -174,6 +174,23 @@ function formatWeatherSpeech(weather) {
 }
 
 /**
+ * Plain forecast lines for TTS
+ * @param {Object} forecast - from getForecast()
+ * @param {number} maxSlots - how many periods to include
+ */
+function formatForecastSpeech(forecast, maxSlots = 6) {
+    if (!forecast?.forecasts?.length) {
+        return 'No forecast data available.';
+    }
+    const unit = forecast.units === 'C' ? 'Celsius' : 'Fahrenheit';
+    const parts = forecast.forecasts.slice(0, maxSlots).map((f) => {
+        const when = f.datetime.toLocaleString();
+        return `${when}: ${f.temperature} degrees ${unit}, ${f.description}`;
+    });
+    return `Forecast for ${forecast.location}. ${parts.join('. ')}.`;
+}
+
+/**
  * Gets weather summary for AI context
  * @returns {Promise<string>} Weather summary string
  */
@@ -224,6 +241,7 @@ module.exports = {
     getForecast,
     formatWeather,
     formatWeatherSpeech,
+    formatForecastSpeech,
     getWeatherSummary,
     registerActions
 };

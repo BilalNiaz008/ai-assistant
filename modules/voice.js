@@ -160,11 +160,12 @@ async function speakWithSAPI(text) {
     const ps1Path = `${tmpBase}.ps1`;
     const txtLiteral = txtPath.replace(/'/g, "''");
 
+    const sapiVol = Math.min(100, Math.max(0, config.voice?.sapiVolume ?? 100));
     const ps1Content = [
         'Add-Type -AssemblyName System.Speech',
         '$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer',
         '$synth.Rate = 0',
-        '$synth.Volume = 100',
+        `$synth.Volume = ${sapiVol}`,
         `$txt = Get-Content -LiteralPath '${txtLiteral}' -Raw -Encoding UTF8`,
         '$null = $synth.Speak($txt)'
     ].join('\r\n');
@@ -193,12 +194,15 @@ async function speakWithSAPI(text) {
  * @returns {Promise<void>}
  */
 function tryPlayWithFfplay(normalizedPath) {
+    const gain = config.voice?.mp3Gain ?? 1.45;
     return new Promise((resolve, reject) => {
         const child = spawn('ffplay', [
             '-nodisp',
             '-autoexit',
             '-loglevel',
             'quiet',
+            '-af',
+            `volume=${gain}`,
             normalizedPath
         ], { stdio: 'ignore', windowsHide: true });
         child.on('error', () => reject(new Error('ffplay not available')));
@@ -227,11 +231,12 @@ function tryPlayWithVlc(normalizedPath) {
  */
 function playAudioWindowsMediaPlayer(normalizedPath) {
     const ps1Path = path.join(os.tmpdir(), `jarvis-play-${process.pid}-${Date.now()}.ps1`);
+    const vol = Math.min(1, Math.max(0, (config.voice?.playerVolumePercent ?? 100) / 100));
     const ps1 = [
         'param([string]$Path)',
         'Add-Type -AssemblyName PresentationCore',
         '$mp = New-Object System.Windows.Media.MediaPlayer',
-        '$mp.Volume = 1.0',
+        `$mp.Volume = ${vol}`,
         '$full = [System.IO.Path]::GetFullPath($Path)',
         '$mp.Open([uri]$full)',
         '$mp.Play()',
