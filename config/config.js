@@ -93,7 +93,9 @@ const config = {
         email: process.env.ENABLE_EMAIL !== 'false',
         music: process.env.ENABLE_MUSIC !== 'false',
         aiSummary: process.env.ENABLE_AI_SUMMARY !== 'false',
-        decisionEngine: process.env.ENABLE_DECISION_ENGINE !== 'false'
+        decisionEngine: process.env.ENABLE_DECISION_ENGINE !== 'false',
+        /** Open Basecamp in Chrome during assistant startup (npm start / npm run dev) */
+        openBasecampOnStartup: process.env.OPEN_BASECAMP_ON_STARTUP !== 'false'
     },
 
     // Server settings

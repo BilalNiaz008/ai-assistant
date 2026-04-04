@@ -220,7 +220,10 @@ function getDefaultDecision(contextType) {
             actions: [
                 { name: 'greet_user', params: {}, priority: 1, parallel: false },
                 { name: 'get_weather', params: {}, priority: 2, parallel: true },
-                { name: 'get_unread_emails', params: { maxResults: 5 }, priority: 2, parallel: true }
+                { name: 'get_unread_emails', params: { maxResults: 5 }, priority: 2, parallel: true },
+                ...(config.features.openBasecampOnStartup
+                    ? [{ name: 'open_basecamp', params: {}, priority: 3, parallel: false }]
+                    : [])
             ],
             message: null
         },
