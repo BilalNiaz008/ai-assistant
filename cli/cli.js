@@ -24,6 +24,7 @@ const greeting = require('../modules/greeting');
 const aiSummarizer = require('../modules/ai-summarizer');
 const decisionEngine = require('../core/decision-engine');
 const voice = require('../modules/voice');
+const apps = require('../modules/apps');
 
 const log = createModuleLogger('CLI');
 
@@ -56,6 +57,7 @@ function registerAllActions() {
     greeting.registerActions();
     aiSummarizer.registerActions();
     decisionEngine.registerActions();
+    apps.registerActions();
 }
 
 /**
@@ -222,6 +224,78 @@ program
                 }
                 await speakCliLine(line);
             }
+        }
+    });
+
+// Chrome command
+program
+    .command('chrome [url]')
+    .description('Open Google Chrome (optionally with URL)')
+    .action(async (url) => {
+        registerAllActions();
+        const result = await executeWithSpinner('open_chrome', { url });
+        if (result?.success) {
+            console.log(chalk.green(`\n🌐 ${result.message}\n`));
+            await speakCliLine(`Opening Chrome${url ? ' with ' + url : ''}`);
+        }
+    });
+
+// Basecamp command
+program
+    .command('basecamp')
+    .description('Open Basecamp projects')
+    .action(async () => {
+        registerAllActions();
+        const result = await executeWithSpinner('open_basecamp');
+        if (result?.success) {
+            console.log(chalk.green(`\n📋 ${result.message}\n`));
+            await speakCliLine('Opening Basecamp projects');
+        }
+    });
+
+// Open URL command
+program
+    .command('open <url>')
+    .description('Open a URL in Chrome')
+    .option('-b, --browser <browser>', 'Browser to use (chrome, firefox, edge)', 'chrome')
+    .action(async (url, options) => {
+        registerAllActions();
+        const result = await executeWithSpinner('open_url', { url, browser: options.browser });
+        if (result?.success) {
+            console.log(chalk.green(`\n🌐 ${result.message}\n`));
+            await speakCliLine(`Opening ${url}`);
+        }
+    });
+
+// App command
+program
+    .command('app <name>')
+    .description('Open an application')
+    .action(async (name) => {
+        registerAllActions();
+        const result = await executeWithSpinner('open_app', { name });
+        if (result?.success) {
+            console.log(chalk.green(`\n🚀 ${result.message}\n`));
+            await speakCliLine(`Opening ${name}`);
+        } else {
+            console.log(chalk.red(`\n❌ ${result?.error || 'Failed to open app'}\n`));
+        }
+    });
+
+// Bookmarks command
+program
+    .command('bookmarks')
+    .description('List available bookmarks and apps')
+    .action(async () => {
+        registerAllActions();
+        const result = await executeWithSpinner('list_bookmarks');
+        if (result) {
+            console.log(chalk.cyan('\n📚 Available Bookmarks:\n'));
+            Object.entries(result.bookmarks).forEach(([name, url]) => {
+                console.log(`   ${chalk.white(name.padEnd(12))} ${chalk.gray(url)}`);
+            });
+            console.log(chalk.cyan('\n🚀 Available Apps:\n'));
+            console.log(`   ${result.apps.join(', ')}\n`);
         }
     });
 
@@ -467,15 +541,21 @@ program
                 
                 if (cmd === 'help') {
                     console.log(chalk.cyan('\n   Available commands:'));
-                    console.log('   weather    - Get weather (speaks summary)');
-                    console.log('   email      - Check emails (speaks count)');
-                    console.log('   music      - Play music (speaks status)');
-                    console.log('   pause      - Pause music');
-                    console.log('   greet      - Show greeting');
-                    console.log('   say <text> - Speak text aloud');
-                    console.log('   ask <q>    - Ask AI a question');
-                    console.log('   actions    - List actions');
-                    console.log('   exit       - Exit interactive mode\n');
+                    console.log('   weather      - Get weather (speaks summary)');
+                    console.log('   email        - Check emails (speaks count)');
+                    console.log('   music        - Play music (speaks status)');
+                    console.log('   pause        - Pause music');
+                    console.log('   greet        - Show greeting');
+                    console.log('   say <text>   - Speak text aloud');
+                    console.log('   chrome       - Open Google Chrome');
+                    console.log('   chrome <url> - Open URL in Chrome');
+                    console.log('   basecamp     - Open Basecamp projects');
+                    console.log('   open <url>   - Open any URL');
+                    console.log('   app <name>   - Open an app (vscode, notepad, etc.)');
+                    console.log('   bookmarks    - List saved bookmarks');
+                    console.log('   ask <q>      - Ask AI a question');
+                    console.log('   actions      - List actions');
+                    console.log('   exit         - Exit interactive mode\n');
                     continue;
                 }
                 
@@ -520,6 +600,60 @@ program
                 if (cmd === 'greet') {
                     const result = await executeWithSpinner('greet_user', { speak: true });
                     if (result) console.log(result.formatted);
+                    continue;
+                }
+                
+                if (cmd === 'chrome' || cmd.startsWith('chrome ')) {
+                    const url = cmd === 'chrome' ? null : cmd.substring(7).trim();
+                    const result = await executeWithSpinner('open_chrome', { url });
+                    if (result?.success) {
+                        console.log(chalk.green(`   ${result.message}`));
+                        await speakCliLine(`Opening Chrome${url ? ' with ' + url : ''}`);
+                    }
+                    continue;
+                }
+                
+                if (cmd === 'basecamp') {
+                    const result = await executeWithSpinner('open_basecamp');
+                    if (result?.success) {
+                        console.log(chalk.green(`   ${result.message}`));
+                        await speakCliLine('Opening Basecamp projects');
+                    }
+                    continue;
+                }
+                
+                if (cmd.startsWith('open ')) {
+                    const url = cmd.substring(5).trim();
+                    const result = await executeWithSpinner('open_url', { url, browser: 'chrome' });
+                    if (result?.success) {
+                        console.log(chalk.green(`   ${result.message}`));
+                        await speakCliLine(`Opening ${url}`);
+                    }
+                    continue;
+                }
+                
+                if (cmd.startsWith('app ')) {
+                    const appName = cmd.substring(4).trim();
+                    const result = await executeWithSpinner('open_app', { name: appName });
+                    if (result?.success) {
+                        console.log(chalk.green(`   ${result.message}`));
+                        await speakCliLine(`Opening ${appName}`);
+                    } else {
+                        console.log(chalk.red(`   ${result?.error || 'Failed to open app'}`));
+                    }
+                    continue;
+                }
+                
+                if (cmd === 'bookmarks') {
+                    const result = await executeWithSpinner('list_bookmarks');
+                    if (result) {
+                        console.log(chalk.cyan('\n   Bookmarks:'));
+                        Object.entries(result.bookmarks).forEach(([name, url]) => {
+                            console.log(`   ${name.padEnd(12)} ${chalk.gray(url)}`);
+                        });
+                        console.log(chalk.cyan('\n   Apps:'));
+                        console.log(`   ${result.apps.join(', ')}\n`);
+                    }
                     continue;
                 }
                 

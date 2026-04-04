@@ -21,6 +21,7 @@ const greeting = require('./modules/greeting');
 const aiSummarizer = require('./modules/ai-summarizer');
 const decisionEngine = require('./core/decision-engine');
 const voice = require('./modules/voice');
+const apps = require('./modules/apps');
 
 const log = createModuleLogger('Assistant');
 
@@ -69,6 +70,7 @@ function registerAllActions() {
     greeting.registerActions();
     aiSummarizer.registerActions();
     decisionEngine.registerActions();
+    apps.registerActions();
     
     const stats = registry.getStats();
     log.info(`Registered ${stats.totalActions} actions in ${stats.categories} categories`);
